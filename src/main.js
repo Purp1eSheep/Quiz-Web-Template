@@ -1,5 +1,4 @@
-import { Config } from './config.js';
-import { DOM, State } from './modules/state.js';
+import { DOM, State, Config } from './modules/state.js';
 import { Storage } from './modules/storage.js';
 import { Utils } from './modules/utils.js';
 import { UI } from './modules/ui.js';
@@ -8,54 +7,79 @@ import { UI } from './modules/ui.js';
 async function init() {
     initSettings();
     initEvents();
+    checkProgress();
     
-    // Set UI strings from Config
-    document.title = Config.appTitle;
-    const githubLink = document.getElementById('github-link');
-    if (githubLink) {
-        githubLink.href = Config.githubRepoUrl;
-    }
-    document.querySelector('#select-screen h1').textContent = Config.appTitle;
-    document.querySelector('#select-screen p').textContent = Config.appSubtitle;
-    document.getElementById('start-btn').textContent = Config.labels.startBtn;
-    document.getElementById('browse-btn').textContent = Config.labels.browseBtn;
-    document.getElementById('analysis-btn').textContent = Config.labels.analysisBtn;
-    document.querySelector('#resume-banner span').textContent = Config.labels.resumeBanner;
-    document.getElementById('resume-yes-btn').textContent = Config.labels.resumeYes;
-    document.getElementById('resume-no-btn').textContent = Config.labels.resumeNo;
-    document.querySelector('#export-modal h2').textContent = Config.exportStrings.title;
-    document.querySelector('#export-modal p').textContent = Config.exportStrings.description;
-    document.getElementById('copy-export-btn').textContent = Config.exportStrings.copyBtn;
-    document.getElementById('download-json-btn').textContent = Config.exportStrings.downloadJson;
-    document.getElementById('download-csv-btn').textContent = Config.exportStrings.downloadCsv;
-    document.querySelector('#result-screen h1').textContent = Config.resultStrings.scoreTitle;
-    document.getElementById('back-btn').textContent = Config.resultStrings.backToHome;
-    document.querySelector('#weakness-analysis .challenge-title').textContent = Config.resultStrings.weaknessAnalysisTitle;
-
     try {
         const [manifestRes, csvRes] = await Promise.all([
-            fetch(Config.manifestPath),
-            fetch(Config.questionsCsvPath)
+            fetch(Config.MANIFEST_PATH),
+            fetch(Config.DATA_PATH)
         ]);
+
+        if (!manifestRes.ok || !csvRes.ok) {
+            throw new Error('無法取得題庫檔案，請檢查網路連線或路徑。');
+        }
+
         State.quizSets = await manifestRes.json();
-        
         const csvText = await csvRes.text();
+        
         const results = Papa.parse(csvText, {
             header: true,
-            skipEmptyLines: true
+            skipEmptyLines: true,
+            dynamicTyping: false // 我們手動處理以確保強健性
         });
 
-        State.globalQuestions = results.data.map(q => ({
-            ...q,
-            options: JSON.parse(q.options),
-            answer: Utils.normalizeIndex(JSON.parse(q.answer))
-        }));
+        if (results.errors.length > 0) {
+            console.warn('CSV 解析過程中出現部分錯誤:', results.errors);
+        }
+
+        State.globalQuestions = results.data.map(q => {
+            try {
+                let options = q.options;
+                // 強化解析：嘗試 JSON 解析，失敗則視為以 | 或逗號分隔的字串
+                if (typeof options === 'string') {
+                    if (options.startsWith('[') && options.endsWith(']')) {
+                        options = JSON.parse(options);
+                    } else if (options.includes('|')) {
+                        options = options.split('|').map(s => s.trim());
+                    } else if (options.includes(',')) {
+                        options = options.split(',').map(s => s.trim());
+                    }
+                }
+
+                let answer = q.answer;
+                if (typeof answer === 'string' && answer.startsWith('[') && answer.endsWith(']')) {
+                    answer = JSON.parse(answer);
+                } else if (!isNaN(answer) && answer !== '') {
+                    answer = parseInt(answer);
+                }
+
+                return {
+                    ...q,
+                    options: Array.isArray(options) ? options : [],
+                    answer: Utils.normalizeIndex(answer)
+                };
+            } catch (err) {
+                console.error(`解析題目 (ID: ${q.id}) 失敗:`, err);
+                return null;
+            }
+        }).filter(q => q !== null && q.options.length > 0);
+
+        if (State.globalQuestions.length === 0) {
+            throw new Error('題庫載入後無有效題目，請確認 CSV 格式。');
+        }
 
         UI.renderQuizList();
-        checkProgress();
     } catch (e) {
-        console.error(e);
-        DOM.quizList.innerHTML = `<p class="text-center" style="color:var(--wrong)">資料載入失敗</p>`;
+        console.error('初始化失敗:', e);
+        DOM.quizList.innerHTML = `
+            <div class="text-center" style="padding:40px 20px;">
+                <p style="color:var(--wrong); font-weight:700; font-size:1.2rem; margin-bottom:12px;">🚫 資料載入失敗</p>
+                <p style="color:var(--muted); font-size:0.9rem;">${e.message || '未知錯誤，請重新整理頁面。'}</p>
+                <button class="btn btn-ghost mt-3" id="retry-init-btn">重新嘗試</button>
+            </div>
+        `;
+        const retryBtn = document.getElementById('retry-init-btn');
+        if (retryBtn) retryBtn.addEventListener('click', () => location.reload());
     }
 }
 
@@ -63,12 +87,13 @@ async function init() {
 function initEvents() {
     // 畫面導航
     document.getElementById('browse-btn').onclick = () => { initBrowser(); UI.switchScreen('browser'); };
-    document.getElementById('browser-back-btn').onclick = () => UI.switchScreen('select');
+    document.getElementById('browser-back-btn').onclick = () => { UI.switchScreen('select'); checkProgress(); };
     document.getElementById('back-btn').onclick = () => { 
         clearTimeout(State.redirectTimer); 
         UI.stopResultAudio();
         UI.switchScreen('select'); 
         UI.renderQuizList(); 
+        checkProgress();
     };
     
     // 綁定學習分析看板
@@ -86,8 +111,8 @@ function initEvents() {
             const header = ['id', 'topic', 'question', 'options', 'answer'];
             const rows = questions.map(q => [
                 q.id, q.topic, q.question, 
-                q.options.map((opt, i) => `${['A','B','C','D','E','F'][i]}. ${opt}`).join(' | '),
-                Array.isArray(q.answer) ? q.answer.map(i => ['A','B','C','D','E','F'][i]).join(',') : ['A','B','C','D','E','F'][q.answer]
+                q.options.map((opt, i) => `${State.OPTION_LABELS[i]}. ${opt}`).join(' | '),
+                Array.isArray(q.answer) ? q.answer.map(i => State.OPTION_LABELS[i]).join(',') : State.OPTION_LABELS[q.answer]
             ]);
             const csvContent = "\uFEFF" + [header, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
             Utils.downloadFile(csvContent, fileName, 'text/csv;charset=utf-8;');
@@ -100,19 +125,18 @@ function initEvents() {
         
         if (!questions.length) return UI.showToast('目前沒有錯題紀錄');
 
-        const keys = ['A','B','C','D','E','F'];
-        let textPreview = Config.exportStrings.prefixText;
+        let textPreview = "以下是我的錯題紀錄，請幫我分析我的弱點並提供建議：\n\n";
         
         questions.forEach((q, idx) => {
             const ansIndices = Array.isArray(q.answer) ? q.answer : [q.answer];
-            const correctText = ansIndices.map(i => `${keys[i]}. ${q.options[i]}`).join('、');
+            const correctText = ansIndices.map(i => `${State.OPTION_LABELS[i]}. ${q.options[i]}`).join('、');
             textPreview += `題目 ${idx + 1} [${q.topic}]:\n${q.question}\n正確答案: ${correctText}\n\n`;
         });
 
         document.getElementById('export-preview-text').value = textPreview;
         document.getElementById('export-modal').classList.add('active');
 
-        // 綁定下載按鈕 (閉包捕獲當前題目集)
+        // 綁定下載按鈕
         document.getElementById('download-json-btn').onclick = () => performExport(questions, 'json', 'all_wrong');
         document.getElementById('download-csv-btn').onclick = () => performExport(questions, 'csv', 'all_wrong');
     };
@@ -123,16 +147,17 @@ function initEvents() {
         const textarea = document.getElementById('export-preview-text');
         textarea.select();
         navigator.clipboard.writeText(textarea.value).then(() => {
-            const orig = e.target.textContent;
-            e.target.textContent = Config.exportStrings.copySuccess;
-            setTimeout(() => e.target.textContent = orig, 2000);
+            const btn = e.target;
+            const orig = btn.textContent;
+            btn.textContent = '✅ 已複製';
+            setTimeout(() => btn.textContent = orig, 2000);
         });
     };
     
     // Quiz 控制
     DOM.exitBtn = document.getElementById('exit-btn');
     DOM.exitBtn.onclick = () => UI.showConfirm('退出測驗', '確定要退出看結果？', () => UI.showResult(openAIPrompt));
-    DOM.prevBtn.onclick = () => { if (State.currentIdx > 0) { State.currentIdx--; UI.renderQuestion(); } };
+    DOM.prevBtn.onclick = () => { if (State.currentIdx > 0) { State.currentIdx--; UI.renderQuestion(); saveProgress(); } };
     DOM.nextBtn.onclick = handleNextClick;
 
     // 選項點擊 (Event Delegation)
@@ -206,22 +231,69 @@ function initEvents() {
             openAIPrompt(q, ansRecord ? ansRecord.selected : null);
         }
     };
+
+    // 全域點擊外部關閉彈窗
+    window.onclick = (e) => {
+        if (e.target.classList.contains('modal')) {
+            e.target.classList.remove('active');
+        }
+    };
+
+    // Esc 鍵邏輯
+    window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            const activeModal = document.querySelector('.modal.active');
+            const topBar = document.getElementById('top-bar');
+            
+            if (activeModal) {
+                activeModal.classList.remove('active');
+            } else if (topBar.classList.contains('settings-open')) {
+                topBar.classList.remove('settings-open');
+            } else {
+                const currentScreen = Object.keys(DOM.screens).find(k => DOM.screens[k].classList.contains('active'));
+                if (currentScreen === 'browser') {
+                    UI.switchScreen('select');
+                    checkProgress();
+                } else if (currentScreen === 'quiz') {
+                    DOM.exitBtn.click();
+                } else if (currentScreen === 'result') {
+                    document.getElementById('back-btn').click();
+                }
+            }
+        }
+    });
 }
 
 function openAIPrompt(q, userSelected) {
     if (!q) return;
-    const keys = ['A','B','C','D','E','F'];
     const ansIndices = Array.isArray(q.answer) ? q.answer : [q.answer];
-    const correctOptions = ansIndices.map(i => `${keys[i]}. ${q.options[i]}`).join('、');
-    const optText = q.options.map((o, i) => `${keys[i]}. ${o}`).join('\n');
+    const correctOptions = ansIndices.map(i => `${State.OPTION_LABELS[i]}. ${q.options[i]}`).join('、');
+    const optText = q.options.map((o, i) => `${State.OPTION_LABELS[i]}. ${o}`).join('\n');
     
     let userSelectInfo = "";
     if (userSelected && userSelected.length > 0) {
-        const userText = userSelected.map(i => `${keys[i]}. ${q.options[i]}`).join('、');
+        const userText = userSelected.map(i => `${State.OPTION_LABELS[i]}. ${q.options[i]}`).join('、');
         userSelectInfo = `\n【使用者選的錯誤答案】\n${userText}\n`;
     }
     
-    DOM.aiPromptText.value = Config.aiPromptTemplate(q, optText, correctOptions, userSelectInfo);
+    DOM.aiPromptText.value = `你是一位專業的講師，擅長釐清學生的觀念誤區。
+請針對以下這題考題進行詳細解析：
+
+【題目】
+${q.question}
+
+【選項】
+${optText}
+
+【正確答案】
+${correctOptions}
+${userSelectInfo}
+【解析需求】
+1. **正確答案解析**：請詳細說明為什麼「${correctOptions}」才是正確的，其背後的理論、技術細節或邏輯依據為何。
+2. **錯誤陷阱分析**：${userSelectInfo ? `重點分析為什麼使用者選的「${userSelectInfo.split('\n')[2]}」是錯誤的。請指出該選項的觀念錯誤之處，以及它與正確答案的本質區別。` : "請分析其他錯誤選項常見的干擾點或觀念陷阱。"}
+3. **觀念釐清**：用一句話總結如何區分正確與錯誤選項的關鍵特徵。
+
+請以繁體中文回答，條列式呈現，語氣專業、精簡且直擊重點。`;
     DOM.aiModal.classList.add('active');
 }
 
@@ -246,7 +318,7 @@ function executeStartQuiz() {
     if (challenge) {
         State.isComprehensive = true;
         if (challenge.dataset.type === 'comp') {
-            State.activeQuestions = Utils.weightedShuffle(State.globalQuestions, stats).slice(0, 40);
+            State.activeQuestions = Utils.weightedShuffle(State.globalQuestions, stats).slice(0, Config.MAX_COMP_QUESTIONS);
         } else {
             const filtered = State.globalQuestions.filter(q => Storage.get(Storage.KEYS.WRONG, []).includes(q.id));
             State.activeQuestions = Utils.shuffle(filtered);
@@ -255,8 +327,8 @@ function executeStartQuiz() {
         State.isComprehensive = checked.length > 1;
         const filtered = State.globalQuestions.filter(q => checked.includes(q.topic));
         State.activeQuestions = Utils.weightedShuffle(filtered, stats);
-        if (State.isComprehensive && State.activeQuestions.length > 50) {
-            State.activeQuestions = State.activeQuestions.slice(0, 50);
+        if (State.isComprehensive && State.activeQuestions.length > Config.MAX_TOPIC_QUESTIONS) {
+            State.activeQuestions = State.activeQuestions.slice(0, Config.MAX_TOPIC_QUESTIONS);
         }
     }
 
@@ -267,14 +339,36 @@ function executeStartQuiz() {
     
     UI.switchScreen('quiz');
     UI.renderQuestion();
+    saveProgress();
 }
 
 function handleNextClick() {
-    if (State.answers[State.currentIdx] !== null || State.currentSelection.size === 0) {
+    // 已回答：進入下一題或結算
+    if (State.answers[State.currentIdx] !== null) {
         State.currentIdx++;
-        State.currentIdx < State.activeQuestions.length ? UI.renderQuestion() : UI.showResult(openAIPrompt);
-    } else {
+        if (State.currentIdx < State.activeQuestions.length) {
+            UI.renderQuestion();
+            saveProgress();
+        } else {
+            UI.showResult(openAIPrompt);
+            Storage.remove(Storage.KEYS.PROG);
+        }
+        return;
+    }
+
+    // 未回答：有選選項則送出，沒選則跳過
+    if (State.currentSelection.size > 0) {
         submitAnswer();
+    } else {
+        // 跳過邏輯
+        State.currentIdx++;
+        if (State.currentIdx < State.activeQuestions.length) {
+            UI.renderQuestion();
+            saveProgress();
+        } else {
+            UI.showResult(openAIPrompt);
+            Storage.remove(Storage.KEYS.PROG);
+        }
     }
 }
 
@@ -285,6 +379,8 @@ function submitAnswer() {
     
     const selArr = [...State.currentSelection].sort();
     const isCorrect = selArr.toString() === [...correctArr].sort().toString();
+
+    State.answers[State.currentIdx] = { ...q, selected: selArr, correct: correctArr, isCorrect, origIdx: State.currentIdx };
 
     DOM.optionsWrap.querySelectorAll('.option').forEach(el => {
         el.classList.add('locked');
@@ -307,9 +403,8 @@ function submitAnswer() {
         if (State.audioEnabled) UI.playAudio('wrong');
         UI.addAIBtn(q);
         UI.updateNextBtnUI();
+        saveProgress();
     }
-
-    State.answers[State.currentIdx] = { ...q, selected: selArr, correct: correctArr, isCorrect, origIdx: State.currentIdx };
     saveProgress();
 }
 
@@ -329,31 +424,63 @@ function removeWrong(id) {
     Storage.set(Storage.KEYS.WRONG, Storage.get(Storage.KEYS.WRONG, []).filter(i => i !== id));
 }
 function saveProgress() {
-    if (State.activeQuestions.length) {
-        Storage.set(Storage.KEYS.PROG, { idx: State.currentIdx, ans: State.answers, qs: State.activeQuestions, comp: State.isComprehensive });
+    if (State.activeQuestions && State.activeQuestions.length > 0) {
+        Storage.set(Storage.KEYS.PROG, { 
+            idx: State.currentIdx, 
+            ans: State.answers, 
+            qs: State.activeQuestions, 
+            comp: State.isComprehensive,
+            sel: Array.from(State.currentSelection)
+        });
     }
 }
 function checkProgress() {
     const p = Storage.get(Storage.KEYS.PROG, null);
-    if (p) {
-        document.getElementById('resume-banner').classList.remove('hidden');
+    const banner = document.getElementById('resume-banner');
+    if (!banner) return;
+
+    if (p && p.qs && p.qs.length > 0) {
+        banner.classList.remove('hidden');
         document.getElementById('resume-yes-btn').onclick = () => {
-            State.activeQuestions = p.qs; State.currentIdx = p.idx; State.answers = p.ans; State.isComprehensive = p.comp;
-            document.getElementById('resume-banner').classList.add('hidden');
-            UI.switchScreen('quiz'); UI.renderQuestion();
+            State.activeQuestions = p.qs; 
+            State.currentIdx = p.idx; 
+            State.answers = p.ans; 
+            State.isComprehensive = p.comp;
+            State.currentSelection = new Set(p.sel || []);
+            banner.classList.add('hidden');
+            UI.switchScreen('quiz'); 
+            UI.renderQuestion();
+            
+            // 如果恢復後發現該題已有選擇但未送出，需要還原 UI 選擇狀態
+            if (State.answers[State.currentIdx] === null && State.currentSelection.size > 0) {
+                DOM.optionsWrap.querySelectorAll('.option').forEach(el => {
+                    const idx = parseInt(el.dataset.i);
+                    if (State.currentSelection.has(idx)) el.classList.add('selected');
+                });
+            }
         };
         document.getElementById('resume-no-btn').onclick = () => { 
             UI.showConfirm('放棄進度', '確定要放棄未完成的作答進度嗎？這將無法復原。', () => {
                 Storage.remove(Storage.KEYS.PROG); 
-                document.getElementById('resume-banner').classList.add('hidden'); 
+                banner.classList.add('hidden'); 
                 UI.showToast('進度已清除');
             });
         };
+    } else {
+        banner.classList.add('hidden');
     }
 }
 
 function initSettings() {
-    const themeDescriptions = Config.themeDescriptions;
+    const themeDescriptions = {
+        dark: '🌌 預設深色模式，保護眼睛。',
+        light: '☀️ 簡潔亮色模式，適合明亮環境。',
+        charcoal: '🖤 炭黑柔和：專業深灰背景，色彩飽和但不刺眼。',
+        twilight: '🌆 暮光沈穩：紮實深藍灰，長時間閱讀首選。',
+        'slate-purple': '🔮 石板灰紫：優雅低調的暗紫色系塊。',
+        nord: '🧊 北歐寒霜：乾淨低飽和的灰藍。'
+    };
+
 
     const theme = Storage.get(Storage.KEYS.THEME, 'dark');
     document.documentElement.setAttribute('data-theme', theme);
@@ -377,6 +504,16 @@ function initSettings() {
         State.audioEnabled = !State.audioEnabled;
         Storage.set(Storage.KEYS.AUDIO, State.audioEnabled);
         document.getElementById('audio-status').textContent = State.audioEnabled ? '開啟' : '關閉';
+    };
+
+    State.leftHanded = Storage.get(Storage.KEYS.LEFTHAND, false);
+    document.documentElement.setAttribute('data-lefthand', State.leftHanded);
+    document.getElementById('lefthand-status').textContent = State.leftHanded ? '已開啟' : '已關閉';
+    document.getElementById('lefthand-toggle-card').onclick = () => {
+        State.leftHanded = !State.leftHanded;
+        Storage.set(Storage.KEYS.LEFTHAND, State.leftHanded);
+        document.documentElement.setAttribute('data-lefthand', State.leftHanded);
+        document.getElementById('lefthand-status').textContent = State.leftHanded ? '已開啟' : '已關閉';
     };
 
     document.getElementById('settings-btn').onclick = () => document.getElementById('top-bar').classList.toggle('settings-open');

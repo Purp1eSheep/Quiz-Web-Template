@@ -1,6 +1,17 @@
-import { Config } from '../config.js';
+// --- 1. Configuration ---
+export const Config = {
+    DATA_PATH: 'assets/data/all_questions.csv',
+    MANIFEST_PATH: 'assets/data/manifest.json',
+    SFX_PATH: 'assets/sfx/',
+    MAX_COMP_QUESTIONS: 40,
+    MAX_TOPIC_QUESTIONS: 50,
+    WEIGHT_DEFAULT: 10,
+    WEIGHT_UNATTEMPTED: 100,
+    WEIGHT_EASY: 1,
+    WEIGHT_LOW_ATTEMPT: 30
+};
 
-// --- 1. DOM Cache ---
+// --- 2. DOM Cache ---
 export const DOM = {
     screens: {
         select: document.getElementById('select-screen'),
@@ -22,15 +33,12 @@ export const DOM = {
     prevBtn: document.getElementById('prev-btn'),
     // Modals
     aiModal: document.getElementById('ai-modal'),
-    aiPromptText: document.getElementById('ai-prompt-text'),
-    // Resume Banner
-    resumeBanner: document.getElementById('resume-banner'),
-    resumeYesBtn: document.getElementById('resume-yes-btn'),
-    resumeNoBtn: document.getElementById('resume-no-btn')
+    aiPromptText: document.getElementById('ai-prompt-text')
 };
 
 // --- 2. Application State ---
 export const State = {
+    OPTION_LABELS: ['A', 'B', 'C', 'D', 'E', 'F'],
     quizSets: [],
     globalQuestions: [],
     activeQuestions: [],
@@ -39,12 +47,13 @@ export const State = {
     currentSelection: new Set(),
     isComprehensive: false,
     audioEnabled: false,
+    leftHanded: false,
     audio: {
-        correct: new Audio(Config.audioPaths.correct),
-        wrong: new Audio(Config.audioPaths.wrong),
-        cheer: new Audio(Config.audioPaths.cheer),
-        sad: new Audio(Config.audioPaths.sad)
+        correct: new Audio(Config.SFX_PATH + 'right.mp3'),
+        wrong: new Audio(Config.SFX_PATH + 'wrong.mp3'),
+        cheer: new Audio(Config.SFX_PATH + 'pass.mp3'),
+        sad: new Audio(Config.SFX_PATH + 'notPass.mp3')
     },
-    charts: { progress: null, unit: null, risk: null },
+    charts: { progress: null, risk: null, unit: null },
     redirectTimer: null
 };

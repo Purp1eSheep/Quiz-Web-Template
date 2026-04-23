@@ -1,0 +1,10 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Dev tools
+.vscode/
+.idea/
+
+# Local data (Optional: if you want to hide your local progress)
+# quiz_prog.json

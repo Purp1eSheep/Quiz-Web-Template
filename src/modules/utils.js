@@ -1,3 +1,5 @@
+import { Config } from './state.js';
+
 export const Utils = {
     formatText: text => {
         if (!text) return "";
@@ -9,16 +11,16 @@ export const Utils = {
         return [...arr].map(q => {
             const s = stats[q.id] || { t: 0, w: 0 };
             const accuracy = s.t > 0 ? (s.t - s.w) / s.t : 0;
-            let weight = 10; // 預設權重 (其他題目)
+            let weight = Config.WEIGHT_DEFAULT; // 預設權重 (其他題目)
 
             if (s.t === 0) {
-                weight = 100; // 1. 沒答過的題目
+                weight = Config.WEIGHT_UNATTEMPTED; // 1. 沒答過的題目
             } else if (s.t > 15 && accuracy > 0.85) {
-                weight = 1;   // 答題次數與正確率夠高的題目 (機率極小)
+                weight = Config.WEIGHT_EASY;   // 答題次數與正確率夠高的題目 (機率極小)
             } else if (accuracy > 0.8) {
                 weight = 50;  // 2. 錯誤率過低的題目
             } else if (s.t < 5) {
-                weight = 30;  // 3. 答題次數較低的題目
+                weight = Config.WEIGHT_LOW_ATTEMPT;  // 3. 答題次數較低的題目
             }
 
             // 使用 Efraimidis and Spirakis 演算法進行加權隨機抽樣
