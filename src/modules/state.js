@@ -1,3 +1,5 @@
+import { Config } from '../config.js';
+
 // --- 1. DOM Cache ---
 export const DOM = {
     screens: {
@@ -20,7 +22,11 @@ export const DOM = {
     prevBtn: document.getElementById('prev-btn'),
     // Modals
     aiModal: document.getElementById('ai-modal'),
-    aiPromptText: document.getElementById('ai-prompt-text')
+    aiPromptText: document.getElementById('ai-prompt-text'),
+    // Resume Banner
+    resumeBanner: document.getElementById('resume-banner'),
+    resumeYesBtn: document.getElementById('resume-yes-btn'),
+    resumeNoBtn: document.getElementById('resume-no-btn')
 };
 
 // --- 2. Application State ---
@@ -34,11 +40,11 @@ export const State = {
     isComprehensive: false,
     audioEnabled: false,
     audio: {
-        correct: new Audio('assets/sfx/right.mp3'),
-        wrong: new Audio('assets/sfx/wrong.mp3'),
-        cheer: new Audio('assets/sfx/pass.mp3'),
-        sad: new Audio('assets/sfx/notPass.mp3')
+        correct: new Audio(Config.audioPaths.correct),
+        wrong: new Audio(Config.audioPaths.wrong),
+        cheer: new Audio(Config.audioPaths.cheer),
+        sad: new Audio(Config.audioPaths.sad)
     },
-    charts: { progress: null, risk: null },
+    charts: { progress: null, unit: null, risk: null },
     redirectTimer: null
 };

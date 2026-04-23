@@ -1,3 +1,4 @@
+import { Config } from './config.js';
 import { DOM, State } from './modules/state.js';
 import { Storage } from './modules/storage.js';
 import { Utils } from './modules/utils.js';
@@ -8,10 +9,33 @@ async function init() {
     initSettings();
     initEvents();
     
+    // Set UI strings from Config
+    document.title = Config.appTitle;
+    const githubLink = document.getElementById('github-link');
+    if (githubLink) {
+        githubLink.href = Config.githubRepoUrl;
+    }
+    document.querySelector('#select-screen h1').textContent = Config.appTitle;
+    document.querySelector('#select-screen p').textContent = Config.appSubtitle;
+    document.getElementById('start-btn').textContent = Config.labels.startBtn;
+    document.getElementById('browse-btn').textContent = Config.labels.browseBtn;
+    document.getElementById('analysis-btn').textContent = Config.labels.analysisBtn;
+    document.querySelector('#resume-banner span').textContent = Config.labels.resumeBanner;
+    document.getElementById('resume-yes-btn').textContent = Config.labels.resumeYes;
+    document.getElementById('resume-no-btn').textContent = Config.labels.resumeNo;
+    document.querySelector('#export-modal h2').textContent = Config.exportStrings.title;
+    document.querySelector('#export-modal p').textContent = Config.exportStrings.description;
+    document.getElementById('copy-export-btn').textContent = Config.exportStrings.copyBtn;
+    document.getElementById('download-json-btn').textContent = Config.exportStrings.downloadJson;
+    document.getElementById('download-csv-btn').textContent = Config.exportStrings.downloadCsv;
+    document.querySelector('#result-screen h1').textContent = Config.resultStrings.scoreTitle;
+    document.getElementById('back-btn').textContent = Config.resultStrings.backToHome;
+    document.querySelector('#weakness-analysis .challenge-title').textContent = Config.resultStrings.weaknessAnalysisTitle;
+
     try {
         const [manifestRes, csvRes] = await Promise.all([
-            fetch('assets/data/manifest.json'),
-            fetch('assets/data/all_questions.csv')
+            fetch(Config.manifestPath),
+            fetch(Config.questionsCsvPath)
         ]);
         State.quizSets = await manifestRes.json();
         
@@ -77,7 +101,7 @@ function initEvents() {
         if (!questions.length) return UI.showToast('目前沒有錯題紀錄');
 
         const keys = ['A','B','C','D','E','F'];
-        let textPreview = "以下是我的 iPAS AI 認證錯題紀錄，請幫我分析我的弱點並提供建議：\n\n";
+        let textPreview = Config.exportStrings.prefixText;
         
         questions.forEach((q, idx) => {
             const ansIndices = Array.isArray(q.answer) ? q.answer : [q.answer];
@@ -100,7 +124,7 @@ function initEvents() {
         textarea.select();
         navigator.clipboard.writeText(textarea.value).then(() => {
             const orig = e.target.textContent;
-            e.target.textContent = '✅ 已複製';
+            e.target.textContent = Config.exportStrings.copySuccess;
             setTimeout(() => e.target.textContent = orig, 2000);
         });
     };
@@ -197,24 +221,7 @@ function openAIPrompt(q, userSelected) {
         userSelectInfo = `\n【使用者選的錯誤答案】\n${userText}\n`;
     }
     
-    DOM.aiPromptText.value = `你是一位專業的人工智慧 (AI) 講師，擅長釐清學生的觀念誤區。
-請針對以下這題 iPAS AI 專業認證的考題進行詳細解析：
-
-【題目】
-${q.question}
-
-【選項】
-${optText}
-
-【正確答案】
-${correctOptions}
-${userSelectInfo}
-【解析需求】
-1. **正確答案解析**：請詳細說明為什麼「${correctOptions}」才是正確的，其背後的 AI 理論、技術細節或邏輯依據為何。
-2. **錯誤陷阱分析**：${userSelectInfo ? `重點分析為什麼使用者選的「${userSelectInfo.split('\n')[2]}」是錯誤的。請指出該選項的觀念錯誤之處，以及它與正確答案的本質區別。` : "請分析其他錯誤選項常見的干擾點或觀念陷阱。"}
-3. **觀念釐清**：用一句話總結如何區分正確與錯誤選項的關鍵特徵。
-
-請以繁體中文回答，條列式呈現，語氣專業、精簡且直擊重點。`;
+    DOM.aiPromptText.value = Config.aiPromptTemplate(q, optText, correctOptions, userSelectInfo);
     DOM.aiModal.classList.add('active');
 }
 
@@ -346,15 +353,7 @@ function checkProgress() {
 }
 
 function initSettings() {
-    const themeDescriptions = {
-        dark: '🌌 預設深色模式，保護眼睛。',
-        light: '你有病？亮色模式會閃瞎啊！',
-        charcoal: '🖤 炭黑柔和：專業深灰背景，色彩飽和但不刺眼。',
-        twilight: '🌆 暮光沈穩：紮實深藍灰，長時間閱讀首選。',
-        'slate-purple': '🔮 石板灰紫：優雅低調的暗紫色系塊。',
-        nord: '🧊 北歐寒霜：乾淨低飽和的灰藍。'
-    };
-
+    const themeDescriptions = Config.themeDescriptions;
 
     const theme = Storage.get(Storage.KEYS.THEME, 'dark');
     document.documentElement.setAttribute('data-theme', theme);

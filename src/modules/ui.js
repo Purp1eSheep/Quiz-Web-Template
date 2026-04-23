@@ -1,3 +1,4 @@
+import { Config } from '../config.js';
 import { DOM, State } from './state.js';
 import { Storage } from './storage.js';
 import { Utils } from './utils.js';
@@ -60,22 +61,24 @@ export const UI = {
         if (isAns && !ansData.isCorrect) UI.addAIBtn(q);
         
         DOM.prevBtn.disabled = State.currentIdx === 0;
+        DOM.prevBtn.textContent = Config.labels.prevBtn;
         UI.updateNextBtnUI();
     },
 
     updateNextBtnUI: () => {
         DOM.nextBtn.disabled = false;
         DOM.exitBtn.disabled = false;
+        DOM.exitBtn.textContent = Config.labels.exitBtn;
         const isLast = State.currentIdx === State.activeQuestions.length - 1;
         if (State.answers[State.currentIdx] !== null || State.currentSelection.size > 0) {
-            DOM.nextBtn.textContent = isLast ? '完成作答' : '下一題';
+            DOM.nextBtn.textContent = isLast ? Config.labels.finishBtn : Config.labels.nextBtn;
         } else {
-            DOM.nextBtn.textContent = '跳過';
+            DOM.nextBtn.textContent = Config.labels.skipBtn;
         }
     },
 
     addAIBtn: (q) => {
-        DOM.expWrap.innerHTML = `<button class="btn btn-ghost w-100 mt-3 ai-btn" style="border-color:var(--wrong)" data-id="${q.id}">🤖 AI 詳解</button>`;
+        DOM.expWrap.innerHTML = `<button class="btn btn-ghost w-100 mt-3 ai-btn" style="border-color:var(--wrong)" data-id="${q.id}">${Config.labels.aiAssistantBtn}</button>`;
     },
 
     playAudio: (key) => {
@@ -126,7 +129,7 @@ export const UI = {
         
         document.getElementById('score-number').textContent = `${correctCount} / ${validAns.length}`;
         const rateEl = document.getElementById('score-percent');
-        rateEl.textContent = `答對率：${rate}%`;
+        rateEl.textContent = `${Config.resultStrings.accuracyLabel}：${rate}%`;
         rateEl.style.color = rate >= 80 ? 'var(--correct)' : 'var(--accent)';
 
         if (State.audioEnabled) {
@@ -202,8 +205,8 @@ export const UI = {
                     <div class="flex-between" style="align-items:flex-start; margin-bottom:8px;">
                         <div style="font-family:monospace; font-weight:700; color:var(--accent); font-size:0.8rem;">${q.id}</div>
                         <div class="flex-gap" style="flex-wrap:wrap;">
-                            ${isBookmarked ? '<span class="badge" style="background:var(--accent-soft); color:var(--accent); margin-bottom:0;">⭐ 已收藏</span>' : ''}
-                            ${(s.t > 0 && s.w/s.t > 0.5) ? '<span class="badge" style="background:var(--wrong-soft); color:var(--wrong); margin-bottom:0;">⚠️ 易錯題</span>' : ''}
+                            ${isBookmarked ? `<span class="badge" style="background:var(--accent-soft); color:var(--accent); margin-bottom:0;">${Config.labels.isBookmarkedBadge}</span>` : ''}
+                            ${(s.t > 0 && s.w/s.t > 0.5) ? `<span class="badge" style="background:var(--wrong-soft); color:var(--wrong); margin-bottom:0;">${Config.labels.isRiskyBadge}</span>` : ''}
                         </div>
                     </div>
                     <div style="font-size:0.95rem; font-weight:600; margin-bottom:12px; line-height:1.5; white-space:pre-wrap;">${Utils.formatText(q.question)}</div>
@@ -211,9 +214,9 @@ export const UI = {
                     <div class="flex-between" style="align-items:flex-end;">
                         <div class="flex-gap" style="font-size:0.75rem; color:var(--muted);"><span>🏷️ ${q.topic}</span></div>
                         <div class="flex-gap">
-                            <button class="btn-link ai-btn" data-id="${q.id}" style="border:1.5px solid var(--accent); color:var(--accent); padding:4px 12px; border-radius:6px; font-size:0.75rem;">🤖 AI 詳解</button>
+                            <button class="btn-link ai-btn" data-id="${q.id}" style="border:1.5px solid var(--accent); color:var(--accent); padding:4px 12px; border-radius:6px; font-size:0.75rem;">${Config.labels.aiAssistantBtn}</button>
                             <button class="btn-link bookmark-btn" data-id="${q.id}" style="border:1.5px solid ${isBookmarked ? 'var(--accent)' : 'var(--border)'}; color:${isBookmarked ? 'var(--accent)' : 'var(--muted)'}; background:${isBookmarked ? 'var(--accent-soft)' : 'none'}; padding:4px 12px; border-radius:6px; font-size:0.75rem;">
-                                ${isBookmarked ? '★ 取消' : '☆ 收藏'}
+                                ${isBookmarked ? Config.labels.unbookmarkBtn : Config.labels.bookmarkBtn}
                             </button>
                         </div>
                     </div>
